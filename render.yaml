@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: mis-tareas
+    runtime: node
+    plan: free
+    buildCommand: "echo sin dependencias"
+    startCommand: node server.js
