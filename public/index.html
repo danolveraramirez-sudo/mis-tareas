@@ -167,6 +167,74 @@
     transition:border-color .2s, background-color .2s;
   }
   input[type=date]:focus { border-color:var(--accent2); }
+  .barra {
+    display:flex;
+    flex-wrap:wrap;
+    align-items:center;
+    gap:10px;
+    margin-bottom:12px;
+  }
+  .campo-buscar {
+    position:relative;
+    flex:1 1 210px;
+    min-width:0;
+    display:flex;
+    align-items:center;
+  }
+  .campo-buscar .icono-buscar {
+    position:absolute;
+    left:12px;
+    font-size:14px;
+    line-height:1;
+    pointer-events:none;
+    opacity:.75;
+  }
+  .campo-buscar input {
+    width:100%;
+    min-width:0;
+    padding:10px 12px 10px 34px;
+    border:1.5px solid var(--line);
+    border-radius:999px;
+    background:var(--input-bg);
+    color:var(--text);
+    font-size:14px;
+    font-family:inherit;
+    outline:none;
+    -webkit-appearance:none;
+    appearance:none;
+    transition:border-color .2s, background-color .2s;
+  }
+  .campo-buscar input::placeholder { color:var(--muted); }
+  .campo-buscar input:focus { border-color:var(--accent2); }
+  .segmentado {
+    display:flex;
+    flex:0 1 auto;
+    gap:4px;
+    padding:4px;
+    background:var(--icon-bg);
+    border-radius:999px;
+  }
+  .seg-btn {
+    border:0;
+    background:none;
+    color:var(--muted);
+    font-size:13px;
+    font-weight:600;
+    font-family:inherit;
+    padding:7px 14px;
+    border-radius:999px;
+    cursor:pointer;
+    white-space:nowrap;
+    line-height:1.3;
+    transition:background-color .2s, color .2s, box-shadow .15s, transform .1s;
+  }
+  .seg-btn:hover { color:var(--text); }
+  .seg-btn.activo {
+    background:linear-gradient(135deg,var(--accent),var(--accent2));
+    color:#fff;
+    box-shadow:0 2px 6px rgba(108,92,231,.35);
+  }
+  .seg-btn.activo:hover { color:#fff; }
   .filtros { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px; }
   .chip {
     border:1px solid var(--line);
@@ -302,6 +370,10 @@
     form { flex-wrap:wrap; }
     select.cat-nueva, select.prior-nueva, input[type=date] { flex:1 1 140px; }
     button.add { flex:1 1 100%; }
+    .barra { gap:8px; }
+    .campo-buscar { flex:1 1 100%; }
+    .segmentado { flex:1 1 100%; }
+    .seg-btn { flex:1 1 0; text-align:center; padding:9px 10px; }
     .check { width:40px; height:40px; }
     .del { min-width:40px; min-height:40px; display:grid; place-items:center; }
     li { padding:12px 2px; }
@@ -328,6 +400,17 @@
        <button class="add" type="submit">Agregar</button>
      </div>
    </form>
+  <div class="barra">
+    <div class="campo-buscar">
+      <span class="icono-buscar" aria-hidden="true">🔍</span>
+      <input type="search" id="buscar" placeholder="Buscar tareas…" autocomplete="off" aria-label="Buscar tareas" title="Buscar tareas">
+    </div>
+    <div class="segmentado" id="segmentado" role="group" aria-label="Filtrar por estado">
+      <button type="button" class="seg-btn" data-estado="todas">Todas</button>
+      <button type="button" class="seg-btn" data-estado="pendientes">Pendientes</button>
+      <button type="button" class="seg-btn" data-estado="completadas">Completadas</button>
+    </div>
+  </div>
   <div class="filtros" id="filtros"></div>
   <ul id="lista"></ul>
   <footer><span id="contador"></span><button id="limpiar" type="button">Borrar completadas</button></footer>
@@ -340,6 +423,15 @@ const CATEGORIAS = { Trabajo:'#3b82f6', Personal:'#8b5cf6', Casa:'#f59e0b', Comp
 const COLOR_GRIS = '#94a3b8';
 const PRIOR_COLOR = { alta:'#ef4444', media:'#f59e0b', baja:'#10b981' };
 let filtro = '';
+
+const ESTADO_KEY = 'estado';
+const ESTADOS = ['todas', 'pendientes', 'completadas'];
+const estadoGuardado = localStorage.getItem(ESTADO_KEY);
+let estado = ESTADOS.indexOf(estadoGuardado) !== -1 ? estadoGuardado : 'todas';
+let busqueda = '';
+let tareasGuardadas = [];
+
+const sinAcentos = s => String(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 
 const catDe = t => (typeof t.categoria === 'string' ? t.categoria.trim() : '');
 const colorDe = cat => CATEGORIAS[cat] || COLOR_GRIS;
@@ -474,7 +566,7 @@ function pintarFiltros() {
     chip.onclick = () => {
       if (filtro === nombre) return;
       filtro = nombre;
-      cargar();
+      render();
     };
     cont.appendChild(chip);
   }
@@ -539,7 +631,7 @@ function crearSelectorOrden() {
   sel.onchange = () => {
     orden = sel.value;
     localStorage.setItem(ORDEN_KEY, orden);
-    cargar();
+    render();
   };
   wrap.appendChild(label); wrap.appendChild(sel);
   return wrap;
@@ -645,6 +737,12 @@ function activarEdicion(li, span, t) {
 
 async function cargar() {
   const tareas = await (await api('/api/tareas')).json();
+  tareasGuardadas = Array.isArray(tareas) ? tareas : [];
+  render();
+}
+
+function render() {
+  const tareas = tareasGuardadas;
   const ul = $('#lista');
   ul.textContent = '';
   pintarFiltros();
@@ -662,7 +760,12 @@ async function cargar() {
     if (sel) sel.value = orden;
   }
 
-  let visibles = filtro ? tareas.filter(t => catDe(t) === filtro) : tareas;
+  let visibles = tareas;
+  if (filtro) visibles = visibles.filter(t => catDe(t) === filtro);
+  if (estado === 'pendientes') visibles = visibles.filter(t => !t.hecha);
+  else if (estado === 'completadas') visibles = visibles.filter(t => !!t.hecha);
+  const q = sinAcentos(busqueda.trim());
+  if (q) visibles = visibles.filter(t => sinAcentos(t.texto || '').indexOf(q) !== -1);
 
   visibles = visibles.slice().sort((a,b) => {
     if (orden === 'alfabetico') {
@@ -691,7 +794,7 @@ async function cargar() {
     li.className = 'vacio';
     li.textContent = !tareas.length
       ? 'No tienes tareas. ¡Agrega la primera! 🎉'
-      : 'No hay tareas en esta categoría.';
+      : 'No hay tareas que coincidan con los filtros';
     ul.appendChild(li);
   } else {
     for (const t of visibles) {
@@ -762,6 +865,32 @@ async function cargar() {
   const pend = tareas.filter(t => !t.hecha).length;
   $('#contador').textContent = `${pend} pendiente${pend === 1 ? '' : 's'} de ${tareas.length}`;
 }
+
+function actualizarSegmentado() {
+  const btns = document.querySelectorAll('.seg-btn');
+  for (const btn of btns) {
+    btn.classList.toggle('activo', btn.dataset.estado === estado);
+  }
+}
+
+(function initSegmentado() {
+  const btns = document.querySelectorAll('.seg-btn');
+  for (const btn of btns) {
+    btn.onclick = () => {
+      if (estado === btn.dataset.estado) return;
+      estado = btn.dataset.estado;
+      localStorage.setItem(ESTADO_KEY, estado);
+      actualizarSegmentado();
+      render();
+    };
+  }
+  actualizarSegmentado();
+})();
+
+$('#buscar').oninput = e => {
+  busqueda = e.target.value;
+  render();
+};
 
 $('#form').onsubmit = async e => {
   e.preventDefault();
