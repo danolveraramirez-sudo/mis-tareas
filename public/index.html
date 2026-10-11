@@ -116,6 +116,83 @@
   }
   button.add:hover { filter:brightness(1.07); }
   button.add:active { transform:scale(.98); }
+  select.cat-nueva {
+    flex:0 1 150px;
+    min-width:0;
+    padding:0 10px;
+    min-height:48px;
+    border:1.5px solid var(--line);
+    border-radius:14px;
+    background:var(--input-bg);
+    color:var(--text);
+    font-size:14px;
+    font-family:inherit;
+    outline:none;
+    cursor:pointer;
+    transition:border-color .2s, background-color .2s;
+  }
+  select.cat-nueva:focus { border-color:var(--accent2); }
+  .filtros { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px; }
+  .chip {
+    border:1px solid var(--line);
+    background:var(--icon-bg);
+    color:var(--muted);
+    padding:6px 13px;
+    border-radius:999px;
+    font-size:13px;
+    font-weight:600;
+    font-family:inherit;
+    cursor:pointer;
+    line-height:1.3;
+    transition:box-shadow .15s, transform .1s, background-color .2s, color .2s;
+  }
+  .chip:hover { transform:translateY(-1px); }
+  .chip.activo { box-shadow:0 0 0 2px var(--accent); background:var(--accent); color:#fff; border-color:transparent; }
+  .pill {
+    display:inline-flex;
+    align-items:center;
+    max-width:120px;
+    padding:3px 10px;
+    border-radius:999px;
+    font-size:12px;
+    font-weight:700;
+    font-family:inherit;
+    line-height:1.4;
+    cursor:pointer;
+    flex-shrink:0;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    transition:transform .1s;
+  }
+  .pill:hover { transform:scale(1.05); }
+  .pill-add {
+    border:1px dashed var(--line);
+    background:none;
+    color:var(--muted);
+    font-size:14px;
+    line-height:1;
+    padding:5px 8px;
+    border-radius:999px;
+    cursor:pointer;
+    flex-shrink:0;
+    transition:color .2s, border-color .2s;
+  }
+  .pill-add:hover { color:var(--accent); border-color:var(--accent2); }
+  select.cat-sel {
+    flex-shrink:0;
+    max-width:150px;
+    padding:4px 8px;
+    border:1.5px solid var(--accent2);
+    border-radius:999px;
+    background:var(--input-bg);
+    color:var(--text);
+    font-size:13px;
+    font-family:inherit;
+    font-weight:600;
+    outline:none;
+    cursor:pointer;
+  }
   ul { list-style:none; margin:0; padding:0; }
   li {
     display:flex;
@@ -188,6 +265,7 @@
     h1 { font-size:24px; }
     .tema { top:16px; right:16px; }
     form { flex-wrap:wrap; }
+    select.cat-nueva { flex:1 1 140px; }
     button.add { flex:1 1 100%; }
     .check { width:40px; height:40px; }
     .del { min-width:40px; min-height:40px; display:grid; place-items:center; }
@@ -204,14 +282,23 @@
   </header>
   <form id="form">
     <input type="text" id="nueva" placeholder="¿Qué necesitas hacer?" maxlength="200" autocomplete="off" autofocus>
+    <select id="catNueva" aria-label="Categoría" title="Categoría"></select>
     <button class="add" type="submit">Agregar</button>
   </form>
+  <div class="filtros" id="filtros"></div>
   <ul id="lista"></ul>
   <footer><span id="contador"></span><button id="limpiar" type="button">Borrar completadas</button></footer>
 </main>
 <script>
 const $ = s => document.querySelector(s);
 const api = (url, opts={}) => fetch(url, { headers:{'Content-Type':'application/json'}, ...opts });
+
+const CATEGORIAS = { Trabajo:'#3b82f6', Personal:'#8b5cf6', Casa:'#f59e0b', Compras:'#10b981', Salud:'#ef4444', Estudio:'#06b6d4' };
+const COLOR_GRIS = '#94a3b8';
+let filtro = '';
+
+const catDe = t => (typeof t.categoria === 'string' ? t.categoria.trim() : '');
+const colorDe = cat => CATEGORIAS[cat] || COLOR_GRIS;
 
 (function initTema() {
   const guardado = localStorage.getItem('tema');
@@ -234,6 +321,119 @@ $('#tema').onclick = () => {
 };
 
 $('#fecha').textContent = new Date().toLocaleDateString('es-MX', { weekday:'long', day:'numeric', month:'long' });
+
+(function initSelectNueva() {
+  const sel = $('#catNueva');
+  const vacia = document.createElement('option');
+  vacia.value = '';
+  vacia.textContent = 'Sin categoría';
+  sel.appendChild(vacia);
+  for (const nombre of Object.keys(CATEGORIAS)) {
+    const o = document.createElement('option');
+    o.value = nombre;
+    o.textContent = nombre;
+    sel.appendChild(o);
+  }
+})();
+
+function crearEtiqueta(t) {
+  const cat = catDe(t);
+  const c = colorDe(cat);
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  if (cat) {
+    btn.className = 'pill';
+    btn.textContent = cat;
+    btn.title = 'Cambiar categoría';
+    btn.style.background = c + '2e';
+    btn.style.border = '1px solid ' + c + '66';
+    btn.style.color = c;
+  } else {
+    btn.className = 'pill-add';
+    btn.textContent = '🏷️';
+    btn.title = 'Asignar categoría';
+  }
+  btn.onclick = () => abrirSelectorCat(btn, t);
+  return btn;
+}
+
+function abrirSelectorCat(nodo, t) {
+  const li = nodo.closest('li');
+  if (!li || li.dataset.catEdit === 'true') return;
+  li.dataset.catEdit = 'true';
+
+  const sel = document.createElement('select');
+  sel.className = 'cat-sel';
+  sel.setAttribute('aria-label', 'Categoría');
+  const op0 = document.createElement('option');
+  op0.value = '';
+  op0.textContent = 'Sin categoría';
+  sel.appendChild(op0);
+  for (const nombre of Object.keys(CATEGORIAS)) {
+    const o = document.createElement('option');
+    o.value = nombre;
+    o.textContent = nombre;
+    sel.appendChild(o);
+  }
+  sel.value = catDe(t);
+
+  let cerrado = false;
+  const restaurar = () => {
+    if (cerrado) return;
+    cerrado = true;
+    li.dataset.catEdit = 'false';
+    if (sel.isConnected) li.replaceChild(nodo, sel);
+  };
+
+  sel.onchange = async () => {
+    if (cerrado) return;
+    cerrado = true;
+    const val = sel.value;
+    li.dataset.catEdit = 'false';
+    if (val === catDe(t)) {
+      if (sel.isConnected) li.replaceChild(nodo, sel);
+      return;
+    }
+    await api('/api/tareas/' + t.id, { method:'PATCH', body: JSON.stringify({ categoria: val }) });
+    cargar();
+  };
+  sel.onblur = restaurar;
+  sel.onkeydown = e => {
+    if (e.key === 'Escape') { e.preventDefault(); restaurar(); }
+  };
+
+  li.replaceChild(sel, nodo);
+  sel.focus();
+}
+
+function pintarFiltros() {
+  const cont = $('#filtros');
+  cont.textContent = '';
+
+  const nombres = ['', ...Object.keys(CATEGORIAS)];
+  for (const nombre of nombres) {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'chip';
+    chip.textContent = nombre || 'Todas';
+    const activo = filtro === nombre;
+    if (nombre) {
+      const c = CATEGORIAS[nombre];
+      chip.style.background = activo ? c : c + '24';
+      chip.style.border = '1px solid ' + (activo ? c : c + '59');
+      chip.style.color = activo ? '#fff' : c;
+      if (activo) chip.style.boxShadow = '0 0 0 2px ' + c + '66';
+    } else if (activo) {
+      chip.classList.add('activo');
+    }
+    chip.onclick = () => {
+      if (filtro === nombre) return;
+      filtro = nombre;
+      cargar();
+    };
+    cont.appendChild(chip);
+  }
+}
 
 function activarEdicion(li, span, id, textoActual) {
   if (li.dataset.editando === 'true') return;
@@ -290,14 +490,19 @@ async function cargar() {
   const tareas = await (await api('/api/tareas')).json();
   const ul = $('#lista');
   ul.textContent = '';
+  pintarFiltros();
 
-  if (!tareas.length) {
+  const visibles = filtro ? tareas.filter(t => catDe(t) === filtro) : tareas;
+
+  if (!visibles.length) {
     const li = document.createElement('li');
     li.className = 'vacio';
-    li.textContent = 'No tienes tareas. ¡Agrega la primera! 🎉';
+    li.textContent = !tareas.length
+      ? 'No tienes tareas. ¡Agrega la primera! 🎉'
+      : 'No hay tareas en esta categoría.';
     ul.appendChild(li);
   } else {
-    for (const t of tareas) {
+    for (const t of visibles) {
       const li = document.createElement('li');
       if (t.hecha) li.className = 'hecha';
 
@@ -334,7 +539,7 @@ async function cargar() {
 
       texto.ondblclick = () => activarEdicion(li, texto, t.id, t.texto);
 
-      li.append(check, texto, edit, del);
+      li.append(check, texto, crearEtiqueta(t), edit, del);
       ul.appendChild(li);
     }
   }
@@ -347,8 +552,9 @@ $('#form').onsubmit = async e => {
   e.preventDefault();
   const texto = $('#nueva').value.trim();
   if (!texto) return;
-  await api('/api/tareas', { method:'POST', body: JSON.stringify({ texto }) });
+  await api('/api/tareas', { method:'POST', body: JSON.stringify({ texto, categoria: $('#catNueva').value }) });
   $('#nueva').value = '';
+  $('#catNueva').value = '';
   cargar();
 };
 

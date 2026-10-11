@@ -19,6 +19,7 @@ function json(res, code, obj) {
   res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8' });
   res.end(obj === undefined ? '' : JSON.stringify(obj));
 }
+function normCat(v) { return typeof v === 'string' ? v.trim().slice(0, 30) : ''; }
 function body(req) {
   return new Promise((ok, fail) => {
     let d = ''; req.on('data', c => { d += c; if (d.length > 1e5) req.destroy(); });
@@ -39,9 +40,9 @@ http.createServer(async (req, res) => {
     let tareas = load();
     if (req.method === 'GET' && !id) return json(res, 200, tareas);
     if (req.method === 'POST' && !id) {
-      const { texto } = await body(req);
+      const { texto, categoria } = await body(req);
       if (!texto || !String(texto).trim()) return json(res, 400, { error: 'El texto es obligatorio' });
-      const t = { id: crypto.randomUUID(), texto: String(texto).trim().slice(0, 200), hecha: false, creada: new Date().toISOString() };
+      const t = { id: crypto.randomUUID(), texto: String(texto).trim().slice(0, 200), hecha: false, categoria: normCat(categoria), creada: new Date().toISOString() };
       tareas.push(t); save(tareas); return json(res, 201, t);
     }
     const t = tareas.find(x => x.id === id);
@@ -50,7 +51,8 @@ http.createServer(async (req, res) => {
       const b = await body(req);
       const hasHecha = typeof b.hecha === 'boolean';
       const hasTexto = typeof b.texto === 'string';
-      if (!hasHecha && !hasTexto) {
+      const hasCat = 'categoria' in b;
+      if (!hasHecha && !hasTexto && !hasCat) {
         t.hecha = !t.hecha;
       } else {
         if (hasHecha) t.hecha = b.hecha;
@@ -59,6 +61,7 @@ http.createServer(async (req, res) => {
           if (!txt) return json(res, 400, { error: 'El texto es obligatorio' });
           t.texto = txt.slice(0, 200);
         }
+        if (hasCat) t.categoria = normCat(b.categoria);
       }
       save(tareas); return json(res, 200, t);
     }
