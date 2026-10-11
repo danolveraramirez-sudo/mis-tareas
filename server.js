@@ -48,7 +48,18 @@ http.createServer(async (req, res) => {
     if (id && !t) return json(res, 404, { error: 'Tarea no encontrada' });
     if (req.method === 'PATCH' && id) {
       const b = await body(req);
-      t.hecha = typeof b.hecha === 'boolean' ? b.hecha : !t.hecha;
+      const hasHecha = typeof b.hecha === 'boolean';
+      const hasTexto = typeof b.texto === 'string';
+      if (!hasHecha && !hasTexto) {
+        t.hecha = !t.hecha;
+      } else {
+        if (hasHecha) t.hecha = b.hecha;
+        if (hasTexto) {
+          const txt = b.texto.trim();
+          if (!txt) return json(res, 400, { error: 'El texto es obligatorio' });
+          t.texto = txt.slice(0, 200);
+        }
+      }
       save(tareas); return json(res, 200, t);
     }
     if (req.method === 'DELETE' && id) {

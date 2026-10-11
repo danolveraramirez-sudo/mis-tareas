@@ -235,6 +235,57 @@ $('#tema').onclick = () => {
 
 $('#fecha').textContent = new Date().toLocaleDateString('es-MX', { weekday:'long', day:'numeric', month:'long' });
 
+function activarEdicion(li, span, id, textoActual) {
+  if (li.dataset.editando === 'true') return;
+  li.dataset.editando = 'true';
+
+  const original = span.textContent;
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.value = original;
+  input.className = 'texto';
+  input.style.cssText = 'flex:1; font-size:16px; padding:4px 8px; border:1.5px solid var(--accent2); border-radius:8px; background:var(--input-bg); color:var(--text); outline:none;';
+
+  const guardar = async () => {
+    const editando = li.dataset.editando === 'true';
+    if (!editando) return;
+    li.dataset.editando = 'false';
+    const nuevo = input.value.trim();
+    if (!nuevo) {
+      span.textContent = original;
+      if (input.isConnected) li.replaceChild(span, input);
+      return;
+    }
+    if (nuevo === original) {
+      span.textContent = original;
+      if (input.isConnected) li.replaceChild(span, input);
+      return;
+    }
+    try {
+      await api('/api/tareas/' + id, { method:'PATCH', body: JSON.stringify({ texto: nuevo }) });
+      span.textContent = nuevo;
+    } catch (e) {
+      span.textContent = original;
+    }
+    if (input.isConnected) li.replaceChild(span, input);
+  };
+
+  input.onkeydown = e => {
+    if (e.key === 'Enter') { e.preventDefault(); guardar(); }
+    else if (e.key === 'Escape') {
+      li.dataset.editando = 'false';
+      span.textContent = original;
+      li.replaceChild(span, input);
+    }
+  };
+  input.onblur = guardar;
+
+  li.replaceChild(input, span);
+  input.focus();
+  input.select();
+}
+
 async function cargar() {
   const tareas = await (await api('/api/tareas')).json();
   const ul = $('#lista');
@@ -264,6 +315,13 @@ async function cargar() {
       texto.className = 'texto';
       texto.textContent = t.texto;
 
+      const edit = document.createElement('button');
+      edit.className = 'del';
+      edit.type = 'button';
+      edit.title = 'Editar';
+      edit.textContent = '✏️';
+      edit.onclick = () => activarEdicion(li, texto, t.id, t.texto);
+
       const del = document.createElement('button');
       del.className = 'del';
       del.type = 'button';
@@ -274,7 +332,9 @@ async function cargar() {
         cargar();
       };
 
-      li.append(check, texto, del);
+      texto.ondblclick = () => activarEdicion(li, texto, t.id, t.texto);
+
+      li.append(check, texto, edit, del);
       ul.appendChild(li);
     }
   }
