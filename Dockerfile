@@ -7,5 +7,5 @@ RUN mkdir -p /data && chown -R node:node /data
 USER node
 VOLUME ["/data"]
 EXPOSE 8000
-HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD wget -qO- http://127.0.0.1:${PORT}/api/tareas >/dev/null || exit 1
+HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --start-interval=2s --retries=3 CMD wget -qO- http://127.0.0.1:${PORT}/api/tareas >/dev/null || exit 1
 CMD ["node", "server.js"]
