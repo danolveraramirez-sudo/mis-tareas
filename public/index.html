@@ -88,6 +88,62 @@
   header { padding-right:56px; }
   h1 { margin:0 0 4px; font-size:28px; letter-spacing:-.02em; }
   .sub { margin:0 0 24px; color:var(--muted); font-size:15px; }
+  .stats-panel { margin:-8px 0 16px; }
+  .stats {
+    display:grid;
+    grid-template-columns:repeat(auto-fit, minmax(88px, 1fr));
+    gap:10px;
+  }
+  .stat {
+    min-width:0;
+    display:flex;
+    flex-direction:column;
+    gap:3px;
+    padding:10px 12px;
+    background:var(--icon-bg);
+    border:1px solid var(--line);
+    border-radius:14px;
+    transition:background-color .25s, border-color .25s;
+  }
+  .stat-valor {
+    font-size:22px;
+    font-weight:700;
+    line-height:1.1;
+    letter-spacing:-.02em;
+  }
+  .stat-label {
+    font-size:12px;
+    font-weight:600;
+    color:var(--muted);
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
+  .stat-barra {
+    margin-top:4px;
+    height:6px;
+    border-radius:999px;
+    background:var(--line);
+    overflow:hidden;
+  }
+  .stat-barra span {
+    display:block;
+    height:100%;
+    width:0;
+    border-radius:999px;
+    background:linear-gradient(135deg,var(--accent),var(--accent2));
+    transition:width .4s ease;
+  }
+  .stats-aviso {
+    margin:10px 0 0;
+    padding:6px 10px;
+    border:1px solid var(--danger);
+    border-radius:10px;
+    background:var(--danger-bg);
+    color:var(--danger);
+    font-size:13px;
+    font-weight:600;
+  }
   form { display:flex; gap:10px; margin-bottom:12px; flex-wrap:wrap; }
   .form-row { display:flex; gap:10px; flex:1 1 100%; flex-wrap:wrap; }
   input[type=text] {
@@ -366,6 +422,8 @@
     body { padding:16px 12px; }
     .card { padding:22px 18px; border-radius:18px; }
     h1 { font-size:24px; }
+    .stat { padding:8px 10px; }
+    .stat-valor { font-size:19px; }
     .tema { top:16px; right:16px; }
     form { flex-wrap:wrap; }
     select.cat-nueva, select.prior-nueva, input[type=date] { flex:1 1 140px; }
@@ -387,6 +445,24 @@
     <h1>Mis tareas ✓</h1>
     <p class="sub" id="fecha"></p>
   </header>
+  <div class="stats-panel">
+    <div class="stats">
+      <div class="stat">
+        <span class="stat-valor" id="statPend">0</span>
+        <span class="stat-label">Pendientes</span>
+      </div>
+      <div class="stat">
+        <span class="stat-valor" id="statHoy">0</span>
+        <span class="stat-label">Hechas hoy</span>
+      </div>
+      <div class="stat">
+        <span class="stat-valor" id="statProg">0%</span>
+        <span class="stat-label">Progreso</span>
+        <div class="stat-barra" id="statBarraWrap" role="progressbar" aria-label="Progreso" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="statBarra"></span></div>
+      </div>
+    </div>
+    <p class="stats-aviso" id="statsAviso" hidden></p>
+  </div>
    <form id="form">
      <div class="form-row">
        <input type="text" id="nueva" placeholder="¿Qué necesitas hacer?" maxlength="200" autocomplete="off" autofocus>
@@ -741,11 +817,43 @@ async function cargar() {
   render();
 }
 
+function actualizarStats(tareas) {
+  const lista = Array.isArray(tareas) ? tareas : [];
+  const pend = lista.filter(t => !t.hecha).length;
+  const total = lista.length;
+  const hoy = new Date();
+  const hechasHoy = lista.filter(t => {
+    if (!t.hecha) return false;
+    const c = t.completada;
+    if (typeof c !== 'string' || !c) return false;
+    const d = new Date(c);
+    if (isNaN(d.getTime())) return false;
+    return d.getFullYear() === hoy.getFullYear() && d.getMonth() === hoy.getMonth() && d.getDate() === hoy.getDate();
+  }).length;
+  const pct = total ? Math.round(lista.filter(t => t.hecha).length / total * 100) : 0;
+  $('#statPend').textContent = String(pend);
+  $('#statHoy').textContent = String(hechasHoy);
+  $('#statProg').textContent = pct + '%';
+  $('#statBarra').style.width = pct + '%';
+  const wrap = $('#statBarraWrap');
+  if (wrap) wrap.setAttribute('aria-valuenow', String(pct));
+  const vencidas = lista.filter(esVencida).length;
+  const aviso = $('#statsAviso');
+  if (vencidas > 0) {
+    aviso.textContent = '⚠️ ' + vencidas + ' tarea' + (vencidas === 1 ? '' : 's') + ' vencida' + (vencidas === 1 ? '' : 's');
+    aviso.hidden = false;
+  } else {
+    aviso.textContent = '';
+    aviso.hidden = true;
+  }
+}
+
 function render() {
   const tareas = tareasGuardadas;
   const ul = $('#lista');
   ul.textContent = '';
   pintarFiltros();
+  actualizarStats(tareas);
 
   if (!selectorOrdenCreado) {
     const contOrden = document.createElement('div');
