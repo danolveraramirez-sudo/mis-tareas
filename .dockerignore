@@ -1,0 +1,7 @@
+.git
+node_modules
+*.log
+tareas.json
+tareas-render-export.json
+screenshot.png
+render.yaml

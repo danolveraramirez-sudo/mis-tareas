@@ -6,7 +6,9 @@ const crypto = require('crypto');
 
 const PORT = process.env.PORT || 8000;
 const HOST = process.env.HOST || '0.0.0.0';
-const DATA = path.join(__dirname, 'tareas.json');
+const DATA_DIR = process.env.DATA_DIR || __dirname;
+fs.mkdirSync(DATA_DIR, { recursive: true });
+const DATA = path.join(DATA_DIR, 'tareas.json');
 const INDEX = path.join(__dirname, 'public', 'index.html');
 
 function load() {

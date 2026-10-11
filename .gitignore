@@ -2,3 +2,4 @@ server.log
 tunnel.log
 node_modules/
 tareas.json
+tareas-render-export.json
