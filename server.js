@@ -19,11 +19,42 @@ function json(res, code, obj) {
   res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8' });
   res.end(obj === undefined ? '' : JSON.stringify(obj));
 }
-function normCat(v) { return typeof v === 'string' ? v.trim().slice(0, 30) : ''; }
+// Categorías permitidas (deben coincidir con CATEGORIAS de public/index.html). '' = sin categoría.
+const CATEGORIAS = ['', 'Trabajo', 'Personal', 'Casa', 'Compras', 'Salud', 'Estudio'];
+const LIMITE = 1e5; // 100 KB por petición
+
+function errorHttp(status, msg) { const e = new Error(msg); e.status = status; return e; }
+// Devuelve la categoría válida o lanza 400 si no está en la lista.
+function normCat(v) {
+  const c = (v === undefined || v === null) ? '' : (typeof v === 'string' ? v.trim() : null);
+  if (c === null || !CATEGORIAS.includes(c)) throw errorHttp(400, 'Categoría no válida');
+  return c;
+}
+// Devuelve '' (sin fecha) o una fecha YYYY-MM-DD que exista de verdad; si no, lanza 400.
+function normFecha(v) {
+  if (v === undefined || v === null || v === '') return '';
+  if (typeof v !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(v)) throw errorHttp(400, 'Fecha no válida');
+  const [y, m, d] = v.split('-').map(Number);
+  const f = new Date(Date.UTC(y, m - 1, d));
+  if (f.getUTCFullYear() !== y || f.getUTCMonth() !== m - 1 || f.getUTCDate() !== d) throw errorHttp(400, 'Fecha no válida');
+  return v;
+}
 function body(req) {
   return new Promise((ok, fail) => {
-    let d = ''; req.on('data', c => { d += c; if (d.length > 1e5) req.destroy(); });
-    req.on('end', () => { try { ok(d ? JSON.parse(d) : {}); } catch (e) { fail(e); } });
+    if (Number(req.headers['content-length']) > LIMITE) return fail(errorHttp(413, 'Petición demasiado grande'));
+    const partes = []; let total = 0, excedido = false;
+    req.on('data', c => {
+      if (excedido) return;
+      total += c.length;
+      if (total > LIMITE) { excedido = true; partes.length = 0; return fail(errorHttp(413, 'Petición demasiado grande')); }
+      partes.push(c);
+    });
+    req.on('end', () => {
+      if (excedido) return;
+      const d = Buffer.concat(partes).toString('utf8');
+      try { ok(d ? JSON.parse(d) : {}); } catch (e) { fail(errorHttp(400, 'Petición inválida')); }
+    });
+    req.on('error', fail);
   });
 }
 
@@ -44,14 +75,7 @@ http.createServer(async (req, res) => {
       if (!texto || !String(texto).trim()) return json(res, 400, { error: 'El texto es obligatorio' });
       let pr = typeof prioridad === 'string' ? prioridad.toLowerCase() : '';
       if (pr !== 'alta' && pr !== 'media' && pr !== 'baja') pr = 'media';
-      let v = vence;
-      if (v === null || v === '') {
-        v = '';
-      } else if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)) {
-        v = v;
-      } else {
-        v = '';
-      }
+      const v = normFecha(vence);
       const t = { id: crypto.randomUUID(), texto: String(texto).trim().slice(0, 200), hecha: false, categoria: normCat(categoria), creada: new Date().toISOString(), prioridad: pr, vence: v };
       tareas.push(t); save(tareas); return json(res, 201, t);
     }
@@ -64,35 +88,28 @@ http.createServer(async (req, res) => {
       const hasCat = 'categoria' in b;
       const hasPr = 'prioridad' in b;
       const hasVen = 'vence' in b;
+      // Validar todo antes de modificar la tarea
+      const txt = hasTexto ? b.texto.trim() : '';
+      if (hasTexto && !txt) return json(res, 400, { error: 'El texto es obligatorio' });
+      const cat = hasCat ? normCat(b.categoria) : null;
+      const ven = hasVen ? normFecha(b.vence) : null;
+      const estabaHecha = !!t.hecha;
       if (!hasHecha && !hasTexto && !hasCat && !hasPr && !hasVen) {
         t.hecha = !t.hecha;
       } else {
         if (hasHecha) t.hecha = b.hecha;
-        if (hasTexto) {
-          const txt = b.texto.trim();
-          if (!txt) return json(res, 400, { error: 'El texto es obligatorio' });
-          t.texto = txt.slice(0, 200);
-        }
-        if (hasCat) t.categoria = normCat(b.categoria);
+        if (hasTexto) t.texto = txt.slice(0, 200);
+        if (hasCat) t.categoria = cat;
         if (hasPr) {
           const pr = typeof b.prioridad === 'string' ? b.prioridad.toLowerCase() : '';
           if (pr === 'alta' || pr === 'media' || pr === 'baja') t.prioridad = pr;
         }
-        if (hasVen) {
-          const v = b.vence;
-          if (v === null || v === '') {
-            t.vence = '';
-          } else if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)) {
-            t.vence = v;
-          }
-        }
+        if (hasVen) t.vence = ven;
       }
-      if (typeof t.hecha === 'boolean') {
-        if (t.hecha) {
-          if (!t.completada) t.completada = new Date().toISOString();
-        } else {
-          if ('completada' in t) delete t.completada;
-        }
+      // 'completada' solo cambia cuando cambia 'hecha' (editar texto no la toca)
+      if (!!t.hecha !== estabaHecha) {
+        if (t.hecha) t.completada = new Date().toISOString();
+        else delete t.completada;
       }
       save(tareas); return json(res, 200, t);
     }
@@ -103,5 +120,9 @@ http.createServer(async (req, res) => {
       save(tareas.filter(x => !x.hecha)); res.writeHead(204); return res.end();
     }
     json(res, 405, { error: 'Método no permitido' });
-  } catch (e) { json(res, 400, { error: 'Petición inválida' }); }
+  } catch (e) {
+    const status = e && e.status ? e.status : 400;
+    if (status === 413) res.setHeader('Connection', 'close');
+    json(res, status, { error: status === 400 && !e.status ? 'Petición inválida' : e.message });
+  }
 }).listen(PORT, HOST, () => console.log(`Mis tareas en http://${HOST}:${PORT}`));

@@ -182,7 +182,7 @@
   button.add:hover { filter:brightness(1.07); }
   button.add:active { transform:scale(.98); }
   select.cat-nueva {
-    flex:0 1 120px;
+    flex:0 0 auto;
     min-width:0;
     padding:0 10px;
     min-height:48px;
@@ -481,6 +481,36 @@
     transition:color .2s, background-color .2s;
   }
   footer button:hover { color:var(--danger); background:var(--danger-bg); }
+  .aviso {
+    position:fixed;
+    left:50%;
+    bottom:24px;
+    transform:translateX(-50%);
+    z-index:10;
+    display:flex;
+    align-items:center;
+    gap:12px;
+    max-width:calc(100% - 32px);
+    padding:12px 16px;
+    border-radius:14px;
+    background:#1f2333;
+    color:#fff;
+    font-size:14px;
+    box-shadow:0 10px 30px rgba(0,0,0,.25);
+  }
+  .aviso[hidden] { display:none; }
+  .aviso.error { background:var(--danger); }
+  .aviso button {
+    border:0;
+    border-radius:10px;
+    padding:6px 12px;
+    background:rgba(255,255,255,.18);
+    color:#fff;
+    font-weight:700;
+    font-size:14px;
+    font-family:inherit;
+    cursor:pointer;
+  }
   @media (max-width:520px) {
     body { padding:16px 12px; }
     .card { padding:22px 18px; border-radius:18px; }
@@ -564,9 +594,42 @@
   <ul id="lista"></ul>
   <footer><span id="contador"></span><button id="limpiar" type="button">Borrar completadas</button></footer>
 </main>
+<div class="aviso" id="aviso" role="status" aria-live="polite" hidden><span id="avisoTexto"></span><button type="button" id="avisoBtn" hidden>Deshacer</button></div>
 <script>
 const $ = s => document.querySelector(s);
-const api = (url, opts={}) => fetch(url, { headers:{'Content-Type':'application/json'}, ...opts });
+// Aviso temporal abajo de la pantalla. Si se pasa 'accion', muestra el botón Deshacer.
+let avisoTimer = null;
+function mostrarAviso(texto, { error = false, accion = null, ms = 5000 } = {}) {
+  const box = $('#aviso'), btn = $('#avisoBtn');
+  $('#avisoTexto').textContent = texto;
+  box.classList.toggle('error', error);
+  btn.hidden = !accion;
+  btn.onclick = accion ? () => { ocultarAviso(); accion(); } : null;
+  box.hidden = false;
+  clearTimeout(avisoTimer);
+  avisoTimer = setTimeout(ocultarAviso, ms);
+}
+function ocultarAviso() { clearTimeout(avisoTimer); $('#aviso').hidden = true; }
+
+// Llama al servidor; si falla (sin conexión o respuesta con error) muestra un aviso y lanza el error.
+async function api(url, opts={}) {
+  let res;
+  try {
+    res = await fetch(url, { headers:{'Content-Type':'application/json'}, ...opts });
+  } catch (e) {
+    mostrarAviso('No se pudo conectar con el servidor. Revisa tu conexión e intenta de nuevo.', { error:true });
+    e.avisado = true; throw e;
+  }
+  if (!res.ok) {
+    let msg = '';
+    try { msg = (await res.clone().json()).error || ''; } catch (e) {}
+    mostrarAviso('No se pudo guardar' + (msg ? ': ' + msg : '') + '. Intenta de nuevo.', { error:true });
+    const e = new Error(msg || ('HTTP ' + res.status)); e.avisado = true; throw e;
+  }
+  return res;
+}
+// Los errores ya avisados en pantalla no necesitan ensuciar la consola.
+window.addEventListener('unhandledrejection', e => { if (e.reason && e.reason.avisado) e.preventDefault(); });
 
 const CATEGORIAS = { Trabajo:'#3b82f6', Personal:'#8b5cf6', Casa:'#f59e0b', Compras:'#10b981', Salud:'#ef4444', Estudio:'#06b6d4' };
 const COLOR_GRIS = '#94a3b8';
@@ -685,7 +748,7 @@ function abrirSelectorCat(nodo, t) {
       if (sel.isConnected) padre.replaceChild(nodo, sel);
       return;
     }
-    await api('/api/tareas/' + t.id, { method:'PATCH', body: JSON.stringify({ categoria: val }) });
+    try { await api('/api/tareas/' + t.id, { method:'PATCH', body: JSON.stringify({ categoria: val }) }); } catch (e) {}
     cargar();
   };
   sel.onblur = restaurar;
@@ -701,7 +764,8 @@ function pintarFiltros() {
   const cont = $('#filtros');
   cont.textContent = '';
 
-  const nombres = ['', ...Object.keys(CATEGORIAS)];
+  const extras = [...new Set(tareasGuardadas.map(catDe).filter(c => c && !CATEGORIAS[c]))];
+  const nombres = ['', ...Object.keys(CATEGORIAS), ...extras];
   for (const nombre of nombres) {
     const chip = document.createElement('button');
     chip.type = 'button';
@@ -709,7 +773,7 @@ function pintarFiltros() {
     chip.textContent = nombre || 'Todas';
     const activo = filtro === nombre;
     if (nombre) {
-      const c = CATEGORIAS[nombre];
+      const c = colorDe(nombre);
       chip.style.background = activo ? c : c + '24';
       chip.style.border = '1px solid ' + (activo ? c : c + '59');
       chip.style.color = activo ? '#fff' : c;
@@ -745,7 +809,7 @@ function fmtFechaCorta(dStr) {
   f.setHours(0,0,0,0);
   if (f.getTime() === hoy.getTime()) return 'Hoy';
   if (f.getTime() === manana.getTime()) return 'Mañana';
-  return f.toLocaleDateString('es-ES', { day:'numeric', month:'short' }).replace('.', '');
+  return f.toLocaleDateString('es-MX', { day:'numeric', month:'short' }).replace('.', '');
 }
 
 function esVencida(t) {
@@ -838,6 +902,7 @@ function activarEdicion(li, span, t) {
     const editando = li.dataset.editando === 'true';
     if (!editando) return;
     li.dataset.editando = 'false';
+    if (edicionActiva === guardar) edicionActiva = null;
     const nuevo = input.value.trim();
     const nuevoPr = selPr.value;
     const nuevoV = inpDate.value;
@@ -848,21 +913,27 @@ function activarEdicion(li, span, t) {
     }
     const prValid = (nuevoPr === 'alta' || nuevoPr === 'media' || nuevoPr === 'baja') ? nuevoPr : 'media';
     const vValid = /^\d{4}-\d{2}-\d{2}$/.test(nuevoV) ? nuevoV : '';
+    const sinCambios = nuevo === original && prValid === originalPrior && vValid === originalVence;
+    if (sinCambios) {
+      if (wrap.isConnected) li.replaceChild(span, wrap);
+      return;
+    }
+    span.textContent = nuevo;
+    if (wrap.isConnected) li.replaceChild(span, wrap);
     try {
       await api('/api/tareas/' + t.id, { method:'PATCH', body: JSON.stringify({ texto: nuevo, prioridad: prValid, vence: vValid }) });
       t.texto = nuevo;
       t.prioridad = prValid;
       t.vence = vValid;
-      span.textContent = nuevo;
-      cargar();
     } catch (e) {
       span.textContent = original;
     }
-    if (wrap.isConnected) li.replaceChild(span, wrap);
+    cargar();
   };
 
   const cancelar = () => {
     li.dataset.editando = 'false';
+    if (edicionActiva === guardar) edicionActiva = null;
     span.textContent = original;
     if (wrap.isConnected) li.replaceChild(span, wrap);
   };
@@ -880,20 +951,63 @@ function activarEdicion(li, span, t) {
     if (e.key === 'Enter') { e.preventDefault(); guardar(); }
     else if (e.key === 'Escape') { e.preventDefault(); cancelar(); }
   };
-  input.onblur = () => {};
-  selPr.onblur = () => {};
-  inpDate.onblur = () => {};
+  // Clic fuera (el foco sale de los campos de edición) = guardar. Escape sigue cancelando.
+  wrap.addEventListener('focusout', e => {
+    if (e.relatedTarget && wrap.contains(e.relatedTarget)) return;
+    setTimeout(() => { if (!wrap.contains(document.activeElement)) guardar(); }, 0);
+  });
 
+  if (edicionActiva) edicionActiva();
+  edicionActiva = guardar;
   li.replaceChild(wrap, span);
   input.focus();
   input.select();
 }
 
+let edicionActiva = null;      // función guardar() de la edición abierta, si hay una
+const porBorrar = new Set();   // ids borrados en pantalla que aún se pueden deshacer
+let borradoPendiente = null;   // { ids, timer }
+
 async function cargar() {
-  const tareas = await (await api('/api/tareas')).json();
-  tareasGuardadas = Array.isArray(tareas) ? tareas : [];
+  let tareas;
+  try { tareas = await (await api('/api/tareas')).json(); } catch (e) { render(); return; }
+  tareasGuardadas = (Array.isArray(tareas) ? tareas : []).filter(t => !porBorrar.has(t.id));
   render();
 }
+
+// 2: borrar con opción de Deshacer. Se ocultan ya y se borran en el servidor a los 5 s.
+function confirmarBorrado() {
+  const p = borradoPendiente;
+  if (!p) return;
+  borradoPendiente = null;
+  clearTimeout(p.timer);
+  return Promise.all(p.ids.map(id =>
+    api('/api/tareas/' + id, { method:'DELETE' }).catch(() => {}).finally(() => porBorrar.delete(id))
+  )).then(cargar);
+}
+function borrarConDeshacer(ids, mensaje) {
+  if (!ids.length) return;
+  confirmarBorrado();
+  ids.forEach(id => porBorrar.add(id));
+  tareasGuardadas = tareasGuardadas.filter(t => !porBorrar.has(t.id));
+  render();
+  const p = { ids, timer: setTimeout(() => confirmarBorrado(), 5000) };
+  borradoPendiente = p;
+  mostrarAviso(mensaje, { accion: () => {
+    if (borradoPendiente !== p) return;
+    clearTimeout(p.timer);
+    borradoPendiente = null;
+    ids.forEach(id => porBorrar.delete(id));
+    cargar();
+  }, ms: 5000 });
+}
+// Si se cierra la página durante los 5 s, se borra igual.
+window.addEventListener('pagehide', () => {
+  const p = borradoPendiente;
+  if (!p) return;
+  borradoPendiente = null;
+  for (const id of p.ids) fetch('/api/tareas/' + id, { method:'DELETE', keepalive:true }).catch(() => {});
+});
 
 function actualizarStats(tareas) {
   const lista = Array.isArray(tareas) ? tareas : [];
@@ -960,6 +1074,7 @@ function crearEstadoVacio(icono, titulo, texto, conBoton) {
 }
 
 function render() {
+  if (edicionActiva) edicionActiva();
   const tareas = tareasGuardadas;
   const nueva = nuevaId;
   nuevaId = null;
@@ -988,6 +1103,7 @@ function render() {
   const q = sinAcentos(busqueda.trim());
   if (q) visibles = visibles.filter(t => sinAcentos(t.texto || '').indexOf(q) !== -1);
 
+  const pos = new Map(tareas.map((t, i) => [t, i]));
   visibles = visibles.slice().sort((a,b) => {
     if (orden === 'alfabetico') {
       return a.texto.localeCompare(b.texto, 'es');
@@ -1003,9 +1119,9 @@ function render() {
       if (fa !== fb) return fa - fb;
     }
     if (orden === 'recientes') {
-      const ca = a.creada ? new Date(a.creada).getTime() : 0;
-      const cb = b.creada ? new Date(b.creada).getTime() : 0;
-      if (ca !== cb) return cb - ca;
+      // Las tareas se guardan en orden de creación, así que la posición sirve también
+      // para las tareas viejas que no tienen 'creada'.
+      return pos.get(b) - pos.get(a);
     }
     return 0;
   });
@@ -1015,10 +1131,14 @@ function render() {
     li.className = 'vacio';
     if (!tareas.length) {
       li.appendChild(crearEstadoVacio('📝', 'Todo en orden', 'No tienes tareas. Escribe arriba la primera.', false));
+    } else if (q) {
+      li.appendChild(crearEstadoVacio('🔍', 'Sin resultados', 'Prueba con otra búsqueda o cambia los filtros.', true));
     } else if (estado === 'pendientes' && !tareas.some(t => !t.hecha)) {
       li.appendChild(crearEstadoVacio('🎉', '¡Todo listo!', 'No tienes tareas pendientes.', false));
+    } else if (estado === 'completadas' && !tareas.some(t => t.hecha)) {
+      li.appendChild(crearEstadoVacio('✅', 'Nada completado aún', 'Todavía no tienes tareas completadas.', false));
     } else {
-      li.appendChild(crearEstadoVacio('🔍', 'Sin resultados', 'Prueba con otra búsqueda o cambia los filtros.', true));
+      li.appendChild(crearEstadoVacio('🗂️', 'Sin tareas aquí', 'No hay tareas con estos filtros.', true));
     }
     ul.appendChild(li);
   } else {
@@ -1031,13 +1151,15 @@ function render() {
       check.className = 'check';
       check.type = 'button';
       check.title = t.hecha ? 'Marcar pendiente' : 'Marcar hecha';
+      check.setAttribute('aria-label', check.title + ': ' + t.texto);
+      check.setAttribute('aria-pressed', t.hecha ? 'true' : 'false');
       check.textContent = t.hecha ? '✓' : '';
       check.onclick = async () => {
         if (!prefiereReducido()) {
           check.classList.add('pop');
           await new Promise(r => setTimeout(r, 190));
         }
-        await api('/api/tareas/' + t.id, { method:'PATCH', body: JSON.stringify({ hecha: !t.hecha }) });
+        try { await api('/api/tareas/' + t.id, { method:'PATCH', body: JSON.stringify({ hecha: !t.hecha }) }); } catch (e) {}
         cargar();
       };
 
@@ -1049,6 +1171,7 @@ function render() {
       edit.className = 'del';
       edit.type = 'button';
       edit.title = 'Editar';
+      edit.setAttribute('aria-label', 'Editar: ' + t.texto);
       edit.textContent = '✏️';
       edit.onclick = () => activarEdicion(li, texto, t);
 
@@ -1056,14 +1179,14 @@ function render() {
       del.className = 'del';
       del.type = 'button';
       del.title = 'Eliminar';
+      del.setAttribute('aria-label', 'Eliminar: ' + t.texto);
       del.textContent = '✕';
       del.onclick = async () => {
         if (!prefiereReducido()) {
           li.classList.add('saliendo');
           await new Promise(r => setTimeout(r, 200));
         }
-        await api('/api/tareas/' + t.id, { method:'DELETE' });
-        cargar();
+        borrarConDeshacer([t.id], 'Tarea borrada');
       };
 
       texto.ondblclick = () => activarEdicion(li, texto, t);
@@ -1091,7 +1214,7 @@ function render() {
       li.append(check, prInd, texto, meta, edit, del);
       if (vencida) {
         li.style.background = 'var(--danger-bg)';
-        li.style.borderLeft = '3px solid var(--danger)';
+        li.style.boxShadow = 'inset 3px 0 0 var(--danger)';
       }
       ul.appendChild(li);
     }
@@ -1135,13 +1258,16 @@ $('#form').onsubmit = async e => {
   const prOk = (pr === 'alta' || pr === 'media' || pr === 'baja') ? pr : 'media';
   const v = $('#venceNueva').value;
   const vOk = /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : '';
-  const res = await api('/api/tareas', { method:'POST', body: JSON.stringify({ texto, categoria: $('#catNueva').value, prioridad: prOk, vence: vOk }) });
-  if (res.ok) {
-    try {
-      const creada = await res.json();
-      if (creada && creada.id) nuevaId = creada.id;
-    } catch (e) {}
+  let res;
+  try {
+    res = await api('/api/tareas', { method:'POST', body: JSON.stringify({ texto, categoria: $('#catNueva').value, prioridad: prOk, vence: vOk }) });
+  } catch (e) {
+    return; // se conserva lo escrito para reintentar; el aviso ya se mostró
   }
+  try {
+    const creada = await res.json();
+    if (creada && creada.id) nuevaId = creada.id;
+  } catch (e) {}
   $('#nueva').value = '';
   $('#catNueva').value = '';
   $('#priorNueva').value = 'media';
@@ -1149,9 +1275,10 @@ $('#form').onsubmit = async e => {
   cargar();
 };
 
-$('#limpiar').onclick = async () => {
-  await api('/api/tareas?hechas=1', { method:'DELETE' });
-  cargar();
+$('#limpiar').onclick = () => {
+  const ids = tareasGuardadas.filter(t => t.hecha).map(t => t.id);
+  if (!ids.length) { mostrarAviso('No hay tareas completadas para borrar.', { ms: 2500 }); return; }
+  borrarConDeshacer(ids, ids.length === 1 ? '1 tarea completada borrada' : ids.length + ' tareas completadas borradas');
 };
 
 cargar();
