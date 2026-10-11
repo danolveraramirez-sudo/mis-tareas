@@ -44,7 +44,10 @@
   * { box-sizing: border-box; }
   html {
     min-height:100%;
-    background: linear-gradient(135deg, var(--grad-a) 0%, var(--bg) 50%, var(--grad-b) 100%);
+    background-color: var(--bg);
+    background-image: linear-gradient(135deg, var(--grad-a) 0%, var(--bg) 50%, var(--grad-b) 100%);
+    background-repeat: no-repeat;
+    background-size: 100% 100%;
     background-attachment: fixed;
   }
   body {
@@ -492,9 +495,12 @@
     .campo-buscar { flex:1 1 100%; }
     .segmentado { flex:1 1 100%; }
     .seg-btn { flex:1 1 0; text-align:center; padding:9px 10px; }
-    .check { width:40px; height:40px; }
-    .del { min-width:40px; min-height:40px; display:grid; place-items:center; }
-    li { padding:12px 2px; }
+    .check { width:40px; height:40px; flex:0 0 auto; }
+    li > span[style*="width:6px"] { flex:0 0 auto; }
+    .del { min-width:36px; min-height:36px; padding:4px 6px; font-size:18px; display:grid; place-items:center; flex:0 0 auto; }
+    li { padding:10px 2px; gap:8px; flex-wrap:wrap; align-items:flex-start; }
+    .texto { flex:1 1 0; min-width:0; }
+    li > .meta { order:5; flex:1 1 100%; margin-left:52px; }
   }
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after {
@@ -1069,6 +1075,7 @@ function render() {
       prInd.style.cssText = 'width:6px; height:40px; border-radius:3px; background:' + prCol + '; flex-shrink:0;';
 
       const meta = document.createElement('div');
+      meta.className = 'meta';
       meta.style.cssText = 'display:flex; align-items:center; gap:6px; flex-wrap:wrap;';
       const chipV = document.createElement('span');
       const vtxt = fmtFechaCorta(t.vence);
