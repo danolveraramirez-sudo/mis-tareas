@@ -40,9 +40,19 @@ http.createServer(async (req, res) => {
     let tareas = load();
     if (req.method === 'GET' && !id) return json(res, 200, tareas);
     if (req.method === 'POST' && !id) {
-      const { texto, categoria } = await body(req);
+      const { texto, categoria, prioridad, vence } = await body(req);
       if (!texto || !String(texto).trim()) return json(res, 400, { error: 'El texto es obligatorio' });
-      const t = { id: crypto.randomUUID(), texto: String(texto).trim().slice(0, 200), hecha: false, categoria: normCat(categoria), creada: new Date().toISOString() };
+      let pr = typeof prioridad === 'string' ? prioridad.toLowerCase() : '';
+      if (pr !== 'alta' && pr !== 'media' && pr !== 'baja') pr = 'media';
+      let v = vence;
+      if (v === null || v === '') {
+        v = '';
+      } else if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)) {
+        v = v;
+      } else {
+        v = '';
+      }
+      const t = { id: crypto.randomUUID(), texto: String(texto).trim().slice(0, 200), hecha: false, categoria: normCat(categoria), creada: new Date().toISOString(), prioridad: pr, vence: v };
       tareas.push(t); save(tareas); return json(res, 201, t);
     }
     const t = tareas.find(x => x.id === id);
@@ -52,7 +62,9 @@ http.createServer(async (req, res) => {
       const hasHecha = typeof b.hecha === 'boolean';
       const hasTexto = typeof b.texto === 'string';
       const hasCat = 'categoria' in b;
-      if (!hasHecha && !hasTexto && !hasCat) {
+      const hasPr = 'prioridad' in b;
+      const hasVen = 'vence' in b;
+      if (!hasHecha && !hasTexto && !hasCat && !hasPr && !hasVen) {
         t.hecha = !t.hecha;
       } else {
         if (hasHecha) t.hecha = b.hecha;
@@ -62,6 +74,25 @@ http.createServer(async (req, res) => {
           t.texto = txt.slice(0, 200);
         }
         if (hasCat) t.categoria = normCat(b.categoria);
+        if (hasPr) {
+          const pr = typeof b.prioridad === 'string' ? b.prioridad.toLowerCase() : '';
+          if (pr === 'alta' || pr === 'media' || pr === 'baja') t.prioridad = pr;
+        }
+        if (hasVen) {
+          const v = b.vence;
+          if (v === null || v === '') {
+            t.vence = '';
+          } else if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)) {
+            t.vence = v;
+          }
+        }
+      }
+      if (typeof t.hecha === 'boolean') {
+        if (t.hecha) {
+          if (!t.completada) t.completada = new Date().toISOString();
+        } else {
+          if ('completada' in t) delete t.completada;
+        }
       }
       save(tareas); return json(res, 200, t);
     }
