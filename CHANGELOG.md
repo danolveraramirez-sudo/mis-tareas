@@ -1,6 +1,6 @@
 # Changelog
 
-## [Sin publicar] - rama `arreglos-raptor` (commits `66e9e53` y `5bbb7c4`), 10 de octubre de 2026
+## 10 oct 2026 - rama `arreglos-raptor` (commits `66e9e53` y `5bbb7c4`)
 
 Arreglos de los 13 errores de `ERRORES.md` y de 2 detalles encontrados en la segunda prueba. Probado por Tricera: **PASA**.
 
