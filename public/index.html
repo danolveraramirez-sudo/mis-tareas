@@ -645,6 +645,8 @@ function abrirSelectorCat(nodo, t) {
   if (!li || li.dataset.catEdit === 'true') return;
   li.dataset.catEdit = 'true';
 
+  const padre = nodo.parentNode;
+
   const sel = document.createElement('select');
   sel.className = 'cat-sel';
   sel.setAttribute('aria-label', 'Categoría');
@@ -665,7 +667,7 @@ function abrirSelectorCat(nodo, t) {
     if (cerrado) return;
     cerrado = true;
     li.dataset.catEdit = 'false';
-    if (sel.isConnected) li.replaceChild(nodo, sel);
+    if (sel.isConnected) padre.replaceChild(nodo, sel);
   };
 
   sel.onchange = async () => {
@@ -674,7 +676,7 @@ function abrirSelectorCat(nodo, t) {
     const val = sel.value;
     li.dataset.catEdit = 'false';
     if (val === catDe(t)) {
-      if (sel.isConnected) li.replaceChild(nodo, sel);
+      if (sel.isConnected) padre.replaceChild(nodo, sel);
       return;
     }
     await api('/api/tareas/' + t.id, { method:'PATCH', body: JSON.stringify({ categoria: val }) });
@@ -685,7 +687,7 @@ function abrirSelectorCat(nodo, t) {
     if (e.key === 'Escape') { e.preventDefault(); restaurar(); }
   };
 
-  li.replaceChild(sel, nodo);
+  padre.replaceChild(sel, nodo);
   sel.focus();
 }
 
